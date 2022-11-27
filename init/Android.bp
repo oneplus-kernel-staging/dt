@@ -89,3 +89,10 @@ sh_binary {
     src: "init.qcom.sh",
     vendor: true,
 }
+
+prebuilt_etc {
+    name: "fstab.qcom",
+    src: "fstab.qcom",
+    vendor: true,
+    ramdisk_available: true,
+}
