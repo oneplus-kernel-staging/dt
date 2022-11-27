@@ -493,4 +493,4 @@ PRODUCT_BOOT_JARS += \
     WfdCommon
 
 # Inherit from the proprietary files makefile.
-$(call inherit-product, vendor/oneplus/kebab/kebab-vendor.mk)
+$(call inherit-product, vendor/oneplus/lemonades/lemonades-vendor.mk)

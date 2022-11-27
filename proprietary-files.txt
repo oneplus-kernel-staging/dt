@@ -1,7 +1,7 @@
 ## All proprietary files from this list, unless pinned and noted otherwise, are
 ## from OnePlus 8 Pro (IN2025_11.C.36).
 
-# ACDB (8T)
+# ACDB (9R)
 odm/etc/acdbdata/Audio_Parameter_Version.txt
 odm/etc/acdbdata/Bluetooth_cal.acdb
 odm/etc/acdbdata/General_cal.acdb
@@ -79,7 +79,7 @@ vendor/lib/rfsa/adsp/libvdsuperphoto_skel.so
 # ANT+
 vendor/lib64/hw/com.dsi.ant@1.0-impl.so
 
-# Audio firmware (8T)
+# Audio firmware (9R)
 odm/firmware/tfa98xx.cnt
 
 # Audio libraries
@@ -281,7 +281,7 @@ vendor/lib64/libtriplecam_video_optical_zoom.so
 vendor/lib64/vendor.oplus.hardware.cammidasservice@1.0.so
 vendor/lib64/vendor.qti.hardware.camera.postproc@1.0-service-impl.so|7dc3f932216311875fb598c31cd94837c50cf32e|07034348534c394184ff3ae5809be0e7f222e165
 
-# Camera (8T)
+# Camera (9R)
 odm/etc/camera/ashdr/ncf_pack.ncf
 odm/etc/camera/ashdr/ncf_pack_imx471.ncf
 odm/etc/camera/ashdr/ncf_pack_imx481.ncf
@@ -622,7 +622,7 @@ odm/lib64/libgf_ud_hal_18865_G3_oplus.so
 odm/lib64/libgf_ud_hal_20801_G3_oplus.so
 odm/lib64/vendor.oplus.hardware.commondcs@1.0.so
 
-# Fingerprint (8T)
+# Fingerprint (9R)
 odm/vendor/firmware/gfp9638.b00
 odm/vendor/firmware/gfp9638.b01
 odm/vendor/firmware/gfp9638.b02
@@ -870,7 +870,7 @@ odm/lib64/vendor.pixelworks.hardware.feature@1.0.so
 vendor/lib64/libpwirisfeature.so
 vendor/lib64/libpwirishalwrapper.so
 
-# Iris (8T)
+# Iris (9R)
 odm/etc/inparm/irissoft/inParm.lst
 odm/etc/inparm/irissoft/inParm1.txt
 odm/etc/inparm/irissoft/inParm10.txt
@@ -909,7 +909,7 @@ odm/etc/irissoft.fw
 vendor/bin/msm_irqbalance
 vendor/etc/msm_irqbalance.conf
 
-# Keymaster (8T)
+# Keymaster (9R)
 vendor/bin/hw/android.hardware.keymaster@4.1-service-qti
 vendor/etc/init/android.hardware.keymaster@4.1-service-qti.rc
 vendor/lib64/libkeymasterdeviceutils.so
@@ -1294,7 +1294,7 @@ vendor/lib64/libssc_default_listener.so
 vendor/lib64/sensors.ssc.so
 vendor/lib64/vendor.qti.hardware.sensorscalibrate@1.0.so
 
-# Sensors (8T)
+# Sensors (9R)
 odm/etc/sensor/config/kona_T0_sx9324_0.json
 odm/etc/sensor/config/kona_T0_sx9324up_0.json
 odm/etc/sensor/config/kona_ak991x_0.json
@@ -2413,7 +2413,7 @@ vendor/bin/cnss-daemon
 vendor/etc/wifi/p2p_supplicant_overlay.conf
 vendor/etc/wifi/wpa_supplicant_overlay.conf
 
-# WiFi (8T)
+# WiFi (9R)
 odm/etc/wifi/bdwlan.elf
 
 # WiFi Display (system) - from IN2020 11.F.06
