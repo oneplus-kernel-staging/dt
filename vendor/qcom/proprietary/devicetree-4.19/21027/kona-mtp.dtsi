@@ -594,7 +594,7 @@
 		interrupt-parent = <&tlmm>;
 		interrupts = <39 0x0>;
 		irq-gpio = <&tlmm 39 0x2002>;
-               cs-gpio = <&tlmm 43 0x00>;
+               //cs-gpio = <&tlmm 43 0x00>;
 		// zsw bringup temp modify
 		//reset-gpio = <&tlmm 53 0x00>;
 		//lcd-reset-gpio = <&tlmm 85 0x00>;
@@ -1033,7 +1033,7 @@
 	qcom,fg-cutoff-voltage = <3380>;
 	qcom,fg-sys-term-current = <(-475)>;
 	qcom,soc-scale-mode-en;
-	qcom,soc-scale-vbatt-mv = <3850>;
+	qcom,soc-scale-vbatt-mv = <3650>;
 	qcom,ki-coeff-soc-dischg = <30 80 100>;
 	qcom,ki-coeff-hi-dischg = <62 62 62>;
 	qcom,ki-coeff-med-dischg = <122 122 122>;

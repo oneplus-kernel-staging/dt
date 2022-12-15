@@ -3824,6 +3824,21 @@
 			};
 		};
 
+		gpio24_dig_out: gpio24_dig_out {
+			gpio24_dig_out_default: gpio24_dig_out_default {
+				mux {
+					pins = "gpio24";
+					function = "gpio";
+				};
+
+				config {
+					pins = "gpio24";
+					drive-strength = <2>;
+					bias-pull-down;
+				};
+			};
+		};
+
 		/* SE 9 pin mappings */
 		qupv3_se9_i2c_pins: qupv3_se9_i2c_pins {
 			qupv3_se9_i2c_active: qupv3_se9_i2c_active {

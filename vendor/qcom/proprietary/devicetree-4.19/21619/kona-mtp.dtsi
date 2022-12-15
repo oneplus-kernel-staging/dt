@@ -152,6 +152,15 @@
 };
 
 &soc {
+
+	oplus,track-charge {
+		compatible = "oplus,track-charge";
+		track,fast_chg_break_t_thd = <1000>;
+		track,general_chg_break_t_thd = <200>;
+		track,voocphy_type = <4>;
+		track,wired_fast_chg_scheme = <1>;
+	};
+
 	//#ifdef OPLUS_FEATURE_CONNFCSOFT
 	nfc_chipset {
 		compatible = "oplus-nfc-chipset";
@@ -726,6 +735,8 @@
         /* SW Support Feature Control */
                 health_monitor_v2_support;
                 black_gesture_support;
+		black_gesture_indep_support;
+		sportify_aod_gesture_support;
                 //fw_edge_limit_support;
                 kernel_grip_support;
                 pressure_report_support;

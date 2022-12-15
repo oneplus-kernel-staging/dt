@@ -205,6 +205,8 @@
 		compatible = "nxp,tfa98xx";
 		reg = <0x34>;
 		tfa9874_vdd-supply = <&pm8150_s4>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&gpio24_dig_out_default>;
 		reset-gpio = <&tlmm 24 0x00>;
 		tfa_min_range = <5000>;
 		tfa_max_range = <8000>;

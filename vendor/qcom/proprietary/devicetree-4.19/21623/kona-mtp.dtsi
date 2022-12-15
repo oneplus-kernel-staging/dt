@@ -558,6 +558,8 @@
 		project_id = <21623>;
 		irq_need_dev_resume_ok;
 		black_gesture_support;
+		black_gesture_indep_support;
+		sportify_aod_gesture_support;
 		fw_edge_limit_support;
 		pressure_report_support;
 		charger_pump_support;
@@ -1839,7 +1841,7 @@ board_temp-usr {
 		qcom,oplus_batt_4400mv;
 		qcom,support_vooc_by_normal_charger_path;
 		qcom,vooc_fw_update_newmethod;
-		qcom,smart_chg_bcc_support;
+		//qcom,smart_chg_bcc_support;
 		qcom,vooc-low-temp = <0>;
 		qcom,vooc-high-temp = <500>;
 		qcom,vooc-low-soc = <1>;
