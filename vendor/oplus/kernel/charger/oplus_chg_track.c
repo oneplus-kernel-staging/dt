@@ -30,6 +30,7 @@
 #include "oplus_chg_comm.h"
 #include "oplus_chg_core.h"
 #include "oplus_chg_module.h"
+#include "oplus_adapter.h"
 #include "voocphy/oplus_voocphy.h"
 #include "charger_ic/oplus_switching.h"
 
@@ -145,6 +146,9 @@
 #define TRACK_ACTION_WTX_OTG		"wtx_otg"
 #define TRACK_ACTION_WTX_WIRED	"wtx_wired"
 #define TRACK_ACTION_LENS		16
+
+#define TRACK_ONLINE_CHECK_COUNT_THD	40
+#define TRACK_ONLINE_CHECK_T_MS		25
 
 enum adsp_track_debug_type {
 	ADSP_TRACK_DEBUG_DEFAULT,
@@ -327,6 +331,8 @@ struct oplus_chg_track_status {
 	int pre_soc;
 	int curr_uisoc;
 	int pre_uisoc;
+	int pre_vbatt;
+	int pre_time_utc;
 	bool soc_jumped;
 	bool uisoc_jumped;
 	bool uisoc_to_soc_jumped;
@@ -405,7 +411,12 @@ struct oplus_chg_track_status {
 	unsigned long long wls_detach_time_ms;
 	struct oplus_chg_track_fastchg_break fastchg_break_info;
 
+	bool wired_online;
+	bool wired_online_check_stop;
+	int wired_online_check_count;
 	bool mmi_chg;
+	bool once_mmi_chg;
+	bool fastchg_to_normal;
 	bool chg_speed_is_slow;
 	bool tbatt_warm_once;
 	bool tbatt_cold_once;
@@ -417,7 +428,6 @@ struct oplus_chg_track_status {
 	int soc_low_sect_cont_time;
 	int soc_medium_sect_incr_rm;
 	int soc_medium_sect_cont_time;
-	;
 	int soc_high_sect_incr_rm;
 	int soc_high_sect_cont_time;
 	struct oplus_chg_track_speed_ref *wired_speed_ref;
@@ -488,6 +498,7 @@ struct oplus_chg_track {
 	struct delayed_work slow_charging_trigger_work;
 	struct delayed_work charging_break_trigger_work;
 	struct delayed_work wls_charging_break_trigger_work;
+	struct delayed_work check_wired_online_work;
 
 	char voocphy_name[OPLUS_CHG_TRACK_VOOCPHY_NAME_LEN];
 
@@ -496,6 +507,7 @@ struct oplus_chg_track {
 	char chg_power_info[OPLUS_CHG_TRACK_CURX_INFO_LEN];
 
 	struct mutex access_lock;
+	struct mutex online_hold_lock;
 };
 
 struct type_reason_table {
@@ -1745,16 +1757,16 @@ static int oplus_chg_track_obtain_general_info(u8 *curx, int index, int len)
 	index += snprintf(&(curx[index]), len - index,
 		"$$other@@CHGR[ %d %d %d %d %d], "
 		"BAT[ %d %d %d %d %d %4d ], "
-		"GAUGE[ %3d %d %d %4d %7d %3d %3d %3d %3d %4d], "
+		"GAUGE[ %3d %3d %d %d %4d %7d %3d %3d %3d %3d %4d], "
 		"STATUS[ %d %4d %d %d %d 0x%-4x %d %d %d], "
-		"OTHER[ %d %d %d %d %d %d ], "
+		"OTHER[ %d %d %d %d %d %d %3d %3d ], "
 		"SLOW[%d %d %d %d %d %d %d], "
 		"VOOCPHY[ %d %d %d %d %d 0x%0x], "
 		"BREAK[0x%0x %d %d]",
 		chip->charger_exist, chip->charger_type, chip->charger_volt,
 		chip->prop_status, chip->boot_mode, chip->batt_exist,
 		chip->batt_full, chip->chging_on, chip->in_rechging,
-		chip->charging_state, chip->total_time, chip->temperature,
+		chip->charging_state, chip->total_time, chip->temperature, chip->tbatt_temp,
 		chip->batt_volt, chip->batt_volt_min, chip->icharging,
 		chip->ibus, chip->soc, chip->ui_soc, chip->soc_load,
 		chip->batt_rm, chip->batt_fcc, chip->vbatt_over,
@@ -1762,7 +1774,7 @@ static int oplus_chg_track_obtain_general_info(u8 *curx, int index, int len)
 		chip->stop_voter, chip->notify_code, chip->sw_full,
 		chip->hw_full_by_sw, chip->hw_full, chip->otg_switch,
 		chip->mmi_chg, chip->boot_reason, chip->boot_mode,
-		chip->chargerid_volt, chip->chargerid_volt_got,
+		chip->chargerid_volt, chip->chargerid_volt_got, chip->shell_temp, chip->subboard_temp,
 		g_track_chip->track_status.has_judge_speed,
 		g_track_chip->track_status.soc_low_sect_incr_rm,
 		g_track_chip->track_status.soc_low_sect_cont_time,
@@ -1800,15 +1812,15 @@ static int oplus_chg_track_record_general_info(
 		OPLUS_CHG_TRACK_CURX_INFO_LEN - index,
 		"$$other@@CHGR[%d %d %d %d %d], "
 		"BAT[%d %d %d %d %d %4d ], "
-		"GAUGE[%3d %d %d %4d %7d %3d %3d %3d %3d %3d %4d], "
+		"GAUGE[%3d %3d %d %d %4d %7d %3d %3d %3d %3d %3d %4d], "
 		"STATUS[ %d %4d %d %d %d 0x%-4x %d %d %d], "
-		"OTHER[ %d %d %d %d %d %d ], "
+		"OTHER[ %d %d %d %d %d %d %3d %3d ], "
 		"SLOW[%d %d %d %d %d %d %d], "
 		"VOOCPHY[ %d %d %d %d %d 0x%0x]",
 		chip->charger_exist, chip->charger_type, chip->charger_volt,
 		chip->prop_status, chip->boot_mode, chip->batt_exist,
 		chip->batt_full, chip->chging_on, chip->in_rechging,
-		chip->charging_state, chip->total_time, chip->temperature,
+		chip->charging_state, chip->total_time, chip->temperature, chip->tbatt_temp,
 		chip->batt_volt, chip->batt_volt_min, chip->icharging,
 		chip->ibus, chip->soc, chip->smooth_soc, chip->ui_soc, chip->soc_load,
 		chip->batt_rm, chip->batt_fcc, chip->vbatt_over,
@@ -1816,7 +1828,7 @@ static int oplus_chg_track_record_general_info(
 		chip->stop_voter, chip->notify_code, chip->sw_full,
 		chip->hw_full_by_sw, chip->hw_full, chip->otg_switch,
 		chip->mmi_chg, chip->boot_reason, chip->boot_mode,
-		chip->chargerid_volt, chip->chargerid_volt_got,
+		chip->chargerid_volt, chip->chargerid_volt_got, chip->shell_temp, chip->subboard_temp,
 		track_status->has_judge_speed,
 		track_status->soc_low_sect_incr_rm,
 		track_status->soc_low_sect_cont_time,
@@ -2055,6 +2067,10 @@ static void oplus_chg_track_record_charger_info(
 				  track_status->chg_cv_time);
 	}
 
+	index += snprintf(&(p_trigger_data->crux_info[index]),
+			  OPLUS_CHG_TRACK_CURX_INFO_LEN - index,
+			  "$$mmi_chg@@%d", track_status->once_mmi_chg);
+
 	oplus_chg_track_record_general_info(chip, track_status, p_trigger_data, index);
 }
 
@@ -2201,6 +2217,52 @@ static int oplus_chg_track_speed_ref_init(struct oplus_chg_track *chip)
 	return 0;
 }
 
+static void oplus_chg_track_check_wired_online_work(
+	struct work_struct *work)
+{
+	struct oplus_chg_chip *chip = oplus_chg_get_chg_struct();
+	struct oplus_chg_track_status *track_status;
+	struct delayed_work *dwork = to_delayed_work(work);
+	struct oplus_chg_track *g_chip =
+		container_of(dwork, struct oplus_chg_track, check_wired_online_work);
+
+	if (!g_chip || !chip)
+		return;
+
+	track_status = &(g_chip->track_status);
+	mutex_lock(&g_chip->online_hold_lock);
+	if (track_status->wired_online_check_stop) {
+		pr_info("!!!online check_stop. should return\n");
+		mutex_unlock(&g_chip->online_hold_lock);
+		return;
+	}
+
+	if (track_status->wired_online) {
+		if (!(oplus_vooc_get_fastchg_started() ||
+		    oplus_vooc_get_fastchg_to_normal() ||
+		    oplus_vooc_get_fastchg_to_warm() ||
+		    oplus_vooc_get_fastchg_dummy_started() ||
+		   (oplus_vooc_get_adapter_update_status() ==
+		    ADAPTER_FW_NEED_UPDATE) ||
+		   oplus_vooc_get_btb_temp_over() || (!chip->mmi_fastchg) ||
+		   chip->chg_ops->check_chrdet_status())) {
+			track_status->wired_online = 0;
+			track_status->wired_online_check_count = 0;
+			pr_info("!!!break. wired_online:%d\n", track_status->wired_online);
+		}
+	} else {
+		track_status->wired_online_check_count = 0;
+	}
+
+	if (track_status->wired_online_check_count--)
+		schedule_delayed_work(&g_chip->check_wired_online_work,
+			msecs_to_jiffies(TRACK_ONLINE_CHECK_T_MS));
+	mutex_unlock(&g_chip->online_hold_lock);
+
+	pr_info("online:%d, online_check_count:%d\n",
+		track_status->wired_online, track_status->wired_online_check_count);
+}
+
 static int oplus_chg_track_init(struct oplus_chg_track *track_dev)
 {
 	int ret = 0;
@@ -2217,7 +2279,7 @@ static int oplus_chg_track_init(struct oplus_chg_track *track_dev)
 
 	mutex_init(&chip->adsp_upload_lock);
 	init_waitqueue_head(&chip->adsp_upload_wq);
-
+	mutex_init(&chip->online_hold_lock);
 	chip->track_status.curr_soc = -EINVAL;
 	chip->track_status.curr_uisoc = -EINVAL;
 	chip->track_status.pre_soc = -EINVAL;
@@ -2291,7 +2353,7 @@ static int oplus_chg_track_init(struct oplus_chg_track *track_dev)
 	chip->track_status.wls_need_upload = false;
 	chip->track_status.wired_need_upload = false;
 	chip->track_status.real_chg_type = POWER_SUPPLY_TYPE_UNKNOWN;
-
+	chip->track_status.once_mmi_chg = false;
 	memset(&(chip->track_status.fastchg_break_info), 0,
 	       sizeof(chip->track_status.fastchg_break_info));
 	memset(chip->wired_break_crux_info, 0,
@@ -2329,6 +2391,8 @@ static int oplus_chg_track_init(struct oplus_chg_track *track_dev)
 			  oplus_chg_track_charging_break_trigger_work);
 	INIT_DELAYED_WORK(&chip->wls_charging_break_trigger_work,
 			  oplus_chg_track_wls_charging_break_trigger_work);
+	INIT_DELAYED_WORK(&chip->check_wired_online_work,
+			  oplus_chg_track_check_wired_online_work);
 	return ret;
 }
 
@@ -2701,6 +2765,8 @@ static int oplus_chg_track_get_local_time_s(void)
 * track sub version
 * 3: default version for chg track
 * 3.1: add for solve the problem of incorrect PPS records and power mode record error code
+* 3.2: add for solve the problem of adapter_t symbol NULL
+* 3.3: break records and mmi_chg and fastchg_to_normal and soc jump optimize
 */
 
 #if defined(CONFIG_OPLUS_FEATURE_FEEDBACK) || \
@@ -2723,7 +2789,7 @@ static int oplus_chg_track_pack_dcs_info(struct oplus_chg_track *chip)
 			OPLUS_CHG_TRACK_EVENT_ID);
 
 	ret += snprintf(&p_data[ret], OPLUS_CHG_TRIGGER_MSG_LEN - ret,
-			"$$track_ver@@%s", "3.1");
+			"$$track_ver@@%s", "3.3");
 
 	oplus_chg_track_get_type_tag(chip->trigger_data.type_reason,
 				     type_reason_tag);
@@ -3000,8 +3066,8 @@ static int oplus_chg_track_cal_chg_common_mesg(
 	if (chip->temperature > track_status->chg_max_temp)
 		track_status->chg_max_temp = chip->temperature;
 
-	if (chip->tbatt_temp > track_status->batt_max_temp)
-		track_status->batt_max_temp = chip->tbatt_temp;
+	if (oplus_get_report_batt_temp() > track_status->batt_max_temp)
+		track_status->batt_max_temp = oplus_get_report_batt_temp();
 
 	if (chip->icharging < track_status->batt_max_curr)
 		track_status->batt_max_curr = chip->icharging;
@@ -3035,10 +3101,14 @@ static int oplus_chg_track_cal_chg_common_mesg(
 			track_status->chg_verity);
 	}
 
+	if (!track_status->once_mmi_chg && !chip->mmi_chg)
+		track_status->once_mmi_chg = true;
+
 	pr_info("chg_max_temp:%d, batt_max_temp:%d, batt_max_curr:%d, "
-		"batt_max_vol:%d\n",
+		"batt_max_vol:%d, once_mmi_chg:%d\n",
 		track_status->chg_max_temp, track_status->batt_max_temp,
-		track_status->batt_max_curr, track_status->batt_max_vol);
+		track_status->batt_max_curr, track_status->batt_max_vol,
+		track_status->once_mmi_chg);
 
 	return 0;
 }
@@ -3319,6 +3389,10 @@ static void oplus_chg_track_record_break_charging_info(
 			OPLUS_CHG_TRACK_CURX_INFO_LEN - index, "$$power@@%d",
 			power_info.wired_info.power);
 
+		index += snprintf(
+			&(track_chip->charging_break_trigger.crux_info[index]),
+			OPLUS_CHG_TRACK_CURX_INFO_LEN - index, "$$online@@%d",
+			track_status->wired_online);
 		if (strlen(track_status->fastchg_break_info.name)) {
 			index += snprintf(&(track_chip->charging_break_trigger
 						    .crux_info[index]),
@@ -3378,6 +3452,38 @@ static void oplus_chg_track_record_break_charging_info(
 	}
 }
 
+static int oplus_chg_track_check_fastchg_to_normal(
+	struct oplus_chg_track *track_chip, int fastchg_break_code)
+{
+	struct oplus_chg_track_status *track_status;
+	if (!track_chip)
+		return -EINVAL;
+
+	track_status = &track_chip->track_status;
+	switch (track_chip->track_cfg.voocphy_type) {
+	case TRACK_ADSP_VOOCPHY:
+		if (fastchg_break_code == TRACK_ADSP_VOOCPHY_FULL)
+			track_status->fastchg_to_normal = true;
+		break;
+	case TRACK_AP_SINGLE_CP_VOOCPHY:
+	case TRACK_AP_DUAL_CP_VOOCPHY:
+		if (fastchg_break_code == TRACK_CP_VOOCPHY_FULL)
+			track_status->fastchg_to_normal = true;
+		break;
+	case TRACK_MCU_VOOCPHY:
+		if (fastchg_break_code == TRACK_MCU_VOOCPHY_NORMAL_TEMP_FULL ||
+		    fastchg_break_code == TRACK_MCU_VOOCPHY_LOW_TEMP_FULL)
+			track_status->fastchg_to_normal = true;
+		break;
+	default:
+		pr_info("!!!voocphy type is error, should not go here\n");
+		break;
+	}
+
+	pr_info("!!!fastchg_to_normal: %d\n", track_status->fastchg_to_normal);
+	return 0;
+}
+
 int oplus_chg_track_set_fastchg_break_code(int fastchg_break_code)
 {
 	int flv;
@@ -3392,8 +3498,11 @@ int oplus_chg_track_set_fastchg_break_code(int fastchg_break_code)
 	track_chip = g_track_chip;
 	track_status = &track_chip->track_status;
 	track_status->fastchg_break_info.code = fastchg_break_code;
+	oplus_chg_track_check_fastchg_to_normal(track_chip, fastchg_break_code);
 	if (oplus_vooc_get_fast_chg_type())
 		track_status->pre_fastchg_type = oplus_vooc_get_fast_chg_type();
+	pr_info("fastchg_break_code[%d], pre_fastchg_type[0x%x]\n",
+		fastchg_break_code, track_status->pre_fastchg_type);
 	flv = oplus_chg_get_fv_when_vooc(chip);
 	if ((track_status->pre_fastchg_type == CHARGER_SUBTYPE_FASTCHG_VOOC) &&
 	    flv && (flv - TRACK_CHG_VOOC_BATT_VOL_DIFF_MV < chip->batt_volt)) {
@@ -3741,8 +3850,13 @@ int oplus_chg_track_check_wired_charging_break(int vbus_rising)
 
 	if (vbus_rising && (pre_vbus_rising != vbus_rising)) {
 		track_status->pre_chg_subtype = CHARGER_SUBTYPE_DEFAULT;
-		track_status->chg_attach_time_ms =
-			local_clock() / TRACK_LOCAL_T_NS_TO_MS_THD;
+		if (!chip->chg_ops->check_chrdet_status())
+			track_status->chg_attach_time_ms =
+				local_clock() / TRACK_LOCAL_T_NS_TO_MS_THD +
+				TRACK_TIME_5MIN_JIFF_THD;
+		else
+			track_status->chg_attach_time_ms =
+				local_clock() / TRACK_LOCAL_T_NS_TO_MS_THD;
 		fastchg_code_ok =
 			oplus_chg_track_wired_fastchg_good_exit_code(track_chip);
 		pr_info("detal_t:%d, chg_attach_time = %d, "
@@ -3773,7 +3887,8 @@ int oplus_chg_track_check_wired_charging_break(int vbus_rising)
 					&track_chip->charging_break_trigger_work,
 					0);
 			}
-			if (!track_status->wls_need_upload) {
+			if (!track_status->wls_need_upload &&
+			   (!track_status->wired_online)) {
 				cancel_delayed_work_sync(
 					&track_chip->charger_info_trigger_work);
 				cancel_delayed_work_sync(
@@ -3797,7 +3912,8 @@ int oplus_chg_track_check_wired_charging_break(int vbus_rising)
 					&track_chip->charging_break_trigger_work,
 					0);
 			}
-			if (!track_status->wls_need_upload) {
+			if (!track_status->wls_need_upload &&
+			   (!track_status->wired_online)) {
 				cancel_delayed_work_sync(
 					&track_chip->charger_info_trigger_work);
 				cancel_delayed_work_sync(
@@ -3817,9 +3933,27 @@ int oplus_chg_track_check_wired_charging_break(int vbus_rising)
 		oplus_chg_track_set_fastchg_break_code(
 			TRACK_VOOCPHY_BREAK_DEFAULT);
 		track_status->pre_fastchg_type = POWER_SUPPLY_TYPE_UNKNOWN;
+		mutex_lock(&track_chip->online_hold_lock);
+		if (delayed_work_pending(&track_chip->check_wired_online_work))
+			cancel_delayed_work_sync(&track_chip->check_wired_online_work);
+		track_status->wired_online_check_stop = true;
+		if (chip->chg_ops->check_chrdet_status())
+			track_status->wired_online = true;
+		mutex_unlock(&track_chip->online_hold_lock);
 	} else if (!vbus_rising && (pre_vbus_rising != vbus_rising)) {
+		if (!track_status->wired_online)
+			track_status->chg_detach_time_ms = 0;
+		else
 		track_status->chg_detach_time_ms =
 			local_clock() / TRACK_LOCAL_T_NS_TO_MS_THD;
+		mutex_lock(&track_chip->online_hold_lock);
+		if (delayed_work_pending(&track_chip->check_wired_online_work))
+			cancel_delayed_work_sync(&track_chip->check_wired_online_work);
+		track_status->wired_online_check_stop = false;
+		track_status->wired_online_check_count =
+				TRACK_ONLINE_CHECK_COUNT_THD;
+		schedule_delayed_work(&track_chip->check_wired_online_work, 0);
+		mutex_unlock(&track_chip->online_hold_lock);
 		real_chg_type =
 			oplus_chg_track_obtain_wired_break_sub_crux_info(
 				track_status, track_chip->wired_break_crux_info);
@@ -3841,9 +3975,9 @@ int oplus_chg_track_check_wired_charging_break(int vbus_rising)
 			sizeof(track_chip->wired_break_crux_info));
 		power_info = track_status->power_info;
 		track_status->mmi_chg = chip->mmi_chg;
-		pr_info("chg_detach_time = %d, mmi_chg=%d\n",
+		pr_info("chg_detach_time = %d, mmi_chg=%d, wired_online=%d\n",
 			track_status->chg_detach_time_ms,
-			track_status->mmi_chg);
+			track_status->mmi_chg, track_status->wired_online);
 	}
 
 	pre_vbus_rising = vbus_rising;
@@ -4319,7 +4453,7 @@ static int oplus_chg_track_cal_batt_full_time(
 		pre_wls_ffc_status, wls_ffc_status, pre_wls_chg_done,
 		wls_chg_done);
 	if (!track_status->chg_fast_full_time &&
-	    (oplus_vooc_get_fastchg_to_normal() ||
+	    (track_status->fastchg_to_normal ||
 	     (!pre_wls_ffc_status && wls_ffc_status) ||
 	     track_status->wls_prop_status == TRACK_WLS_FASTCHG_FULL ||
 	     track_status->debug_fast_prop_status ==
@@ -4548,6 +4682,9 @@ int oplus_chg_track_obtain_power_info(char *power_info, int len)
 			  "$$shell_temp@@%d", chip->shell_temp);
 	index += snprintf(&(power_info[index]),
 			  OPLUS_CHG_TRACK_CURX_INFO_LEN - index,
+			  "$$subboard_temp@@%d", chip->subboard_temp);
+	index += snprintf(&(power_info[index]),
+			  OPLUS_CHG_TRACK_CURX_INFO_LEN - index,
 			  "$$batt_vol@@%d", chip->batt_volt);
 	index += snprintf(&(power_info[index]),
 			  OPLUS_CHG_TRACK_CURX_INFO_LEN - index,
@@ -4717,8 +4854,8 @@ static int oplus_chg_track_status_reset_when_plugin(
 	track_status->led_change_t = track_status->chg_start_time;
 	track_status->led_change_rm = chip->batt_rm;
 	track_status->chg_start_temp = chip->temperature;
-	track_status->batt_start_temp = chip->tbatt_temp;
-	track_status->batt_max_temp = chip->tbatt_temp;
+	track_status->batt_start_temp = oplus_get_report_batt_temp();
+	track_status->batt_max_temp = oplus_get_report_batt_temp();
 	track_status->batt_max_vol = chip->batt_volt;
 	track_status->batt_max_curr = chip->icharging;
 	track_status->chg_start_rm = chip->batt_rm;
@@ -4737,6 +4874,8 @@ static int oplus_chg_track_status_reset_when_plugin(
 		&track_status->chg_plugin_rtc_t);
 	oplus_chg_track_cal_period_chg_capaticy(g_track_chip);
 	track_status->prop_status = chip->prop_status;
+	track_status->once_mmi_chg = false;
+	track_status->fastchg_to_normal = false;
 	pr_info("chg_start_time:%d, chg_start_soc:%d, chg_start_temp:%d, "
 		"prop_status:%d\n",
 		track_status->chg_start_time, track_status->chg_start_soc,
@@ -4752,6 +4891,13 @@ static int oplus_chg_need_record(
 	int wls_break_work_delay_t;
 	int wired_break_work_delay_t;
 	struct oplus_chg_track_status *track_status;
+
+	if (delayed_work_pending(&track_chip->no_charging_trigger_work) ||
+	    delayed_work_pending(&track_chip->slow_charging_trigger_work) ||
+	    delayed_work_pending(&track_chip->charger_info_trigger_work)) {
+		pr_err("work is pending, should not handle\n");
+		return -EFAULT;
+	}
 
 	pr_info("good record charger info and upload charger info\n");
 	track_status = &track_chip->track_status;
@@ -4873,6 +5019,8 @@ static int oplus_chg_track_speed_check(struct oplus_chg_chip *chip)
 static int oplus_chg_track_uisoc_soc_jump_check(struct oplus_chg_chip *chip)
 {
 	int ret = 0;
+	int curr_time_utc;
+	int curr_vbatt;
 	struct oplus_chg_track_status *track_status;
 	int judge_curr_soc = 0;
 
@@ -4884,12 +5032,17 @@ static int oplus_chg_track_uisoc_soc_jump_check(struct oplus_chg_chip *chip)
 		return ret;
 	}
 
+	curr_time_utc = oplus_chg_track_get_local_time_s();
+	curr_vbatt = chip->batt_volt;
+
 	track_status = &g_track_chip->track_status;
 	if (track_status->curr_soc == -EINVAL) {
 		track_status->curr_soc = chip->soc;
 		track_status->pre_soc = chip->soc;
 		track_status->curr_uisoc = chip->ui_soc;
 		track_status->pre_uisoc = chip->ui_soc;
+		track_status->pre_vbatt = curr_vbatt;
+		track_status->pre_time_utc = curr_time_utc;
 		if (chip->rsd.smooth_switch_v2 && chip->rsd.reserve_soc)
 			judge_curr_soc =
 				track_status->curr_soc * OPLUS_FULL_SOC /
@@ -4908,12 +5061,15 @@ static int oplus_chg_track_uisoc_soc_jump_check(struct oplus_chg_chip *chip)
 				g_track_chip->uisoc_load_trigger.crux_info,
 				OPLUS_CHG_TRACK_CURX_INFO_LEN,
 				"$$curr_uisoc@@%d"
-				"$$curr_soc@@%d$$load_uisoc_soc_gap@@%d$$"
-				"charger_exist@@%d",
+				"$$curr_soc@@%d$$load_uisoc_soc_gap@@%d"
+				"$$pre_vbatt@@%d$$curr_vbatt@@%d"
+				"$$pre_time_utc@@%d$$curr_time_utc@@%d"
+				"$$charger_exist@@%d",
 				track_status->curr_uisoc,
 				track_status->curr_soc,
-				track_status->curr_uisoc -
-					track_status->curr_soc,
+				track_status->curr_uisoc - track_status->curr_soc,
+				track_status->pre_vbatt, curr_vbatt,
+				track_status->pre_time_utc, curr_time_utc,
 				chip->charger_exist);
 			schedule_delayed_work(
 				&g_track_chip->uisoc_load_trigger_work,
@@ -4942,10 +5098,14 @@ static int oplus_chg_track_uisoc_soc_jump_check(struct oplus_chg_chip *chip)
 		ret = snprintf(g_track_chip->soc_trigger.crux_info,
 			       OPLUS_CHG_TRACK_CURX_INFO_LEN,
 			       "$$curr_soc@@%d"
-			       "$$pre_soc@@%d$$curr_soc_pre_soc_gap@@%d$$"
-			       "charger_exist@@%d",
+			       "$$pre_soc@@%d$$curr_soc_pre_soc_gap@@%d"
+			       "$$pre_vbatt@@%d$$curr_vbatt@@%d"
+			       "$$pre_time_utc@@%d$$curr_time_utc@@%d"
+			       "$$charger_exist@@%d",
 			       track_status->curr_soc, track_status->pre_soc,
 			       track_status->curr_soc - track_status->pre_soc,
+			       track_status->pre_vbatt, curr_vbatt,
+			       track_status->pre_time_utc, curr_time_utc,
 			       chip->charger_exist);
 		schedule_delayed_work(&g_track_chip->soc_trigger_work, 0);
 	} else {
@@ -4966,10 +5126,14 @@ static int oplus_chg_track_uisoc_soc_jump_check(struct oplus_chg_chip *chip)
 			g_track_chip->uisoc_trigger.crux_info,
 			OPLUS_CHG_TRACK_CURX_INFO_LEN,
 			"$$curr_uisoc@@%d"
-			"$$pre_uisoc@@%d$$curr_uisoc_pre_uisoc_gap@@%d$$"
-			"charger_exist@@%d",
+			"$$pre_uisoc@@%d$$curr_uisoc_pre_uisoc_gap@@%d"
+			"$$pre_vbatt@@%d$$curr_vbatt@@%d"
+			"$$pre_time_utc@@%d$$curr_time_utc@@%d"
+			"$$charger_exist@@%d",
 			track_status->curr_uisoc, track_status->pre_uisoc,
 			track_status->curr_uisoc - track_status->pre_uisoc,
+			track_status->pre_vbatt, curr_vbatt,
+			track_status->pre_time_utc, curr_time_utc,
 			chip->charger_exist);
 		schedule_delayed_work(&g_track_chip->uisoc_trigger_work, 0);
 	} else {
@@ -4994,11 +5158,14 @@ static int oplus_chg_track_uisoc_soc_jump_check(struct oplus_chg_chip *chip)
 		ret = snprintf(g_track_chip->uisoc_to_soc_trigger.crux_info,
 			       OPLUS_CHG_TRACK_CURX_INFO_LEN,
 			       "$$curr_uisoc@@%d"
-			       "$$curr_soc@@%d$$curr_uisoc_curr_soc_gap@@%d$$"
-			       "charger_exist@@%d",
+			       "$$curr_soc@@%d$$curr_uisoc_curr_soc_gap@@%d"
+			       "$$pre_vbatt@@%d$$curr_vbatt@@%d"
+			       "$$pre_time_utc@@%d$$curr_time_utc@@%d"
+			       "$$charger_exist@@%d",
 			       track_status->curr_uisoc, track_status->curr_soc,
-			       track_status->curr_uisoc -
-				       track_status->curr_soc,
+			       track_status->curr_uisoc -track_status->curr_soc,
+			       track_status->pre_vbatt, curr_vbatt,
+			       track_status->pre_time_utc, curr_time_utc,
 			       chip->charger_exist);
 		schedule_delayed_work(&g_track_chip->uisoc_to_soc_trigger_work,
 				      0);
@@ -5017,6 +5184,8 @@ static int oplus_chg_track_uisoc_soc_jump_check(struct oplus_chg_chip *chip)
 
 	track_status->pre_soc = track_status->curr_soc;
 	track_status->pre_uisoc = track_status->curr_uisoc;
+	track_status->pre_vbatt = curr_vbatt;
+	track_status->pre_time_utc = curr_time_utc;
 
 	return ret;
 }

@@ -50,6 +50,9 @@ oplus_chg-y += oplus_pps_ops_manager.o
 oplus_chg-y += adapter_ic/oplus_stm.o
 oplus_chg-y += charger_ic/oplus_short_ic.o
 oplus_chg-y += gauge_ic/oplus_bq27541.o
+ifeq ($(CONFIG_OPLUS_SM6375R_CHARGER),y)
+oplus_chg-y += gauge_ic/oplus_sm5602.o
+endif
 oplus_chg-y += vooc_ic/oplus_stm8s.o
 oplus_chg-y += vooc_ic/oplus_n76e.o
 oplus_chg-y += vooc_ic/oplus_rk826.o
@@ -61,6 +64,10 @@ oplus_chg-y += voocphy/oplus_hl7138.o
 oplus_chg-y += voocphy/oplus_sc8547.o
 oplus_chg-y += voocphy/oplus_sc8547_slave.o
 oplus_chg-y += charger_ic/s2asl01_switching.o
+ifeq ($(CONFIG_OPLUS_SM6375R_CHARGER),y)
+oplus_chg-y += wireless_ic/oplus_p922x.o
+oplus_chg-y += wireless_ic/oplus_ra9530.o
+endif
 oplus_chg-y += charger_ic/oplus_switching.o
 oplus_chg-y += wireless_ic/oplus_nu1619.o
 oplus_chg-y += wireless_ic/oplus_chargepump.o
@@ -107,8 +114,10 @@ oplus_chg-$(CONFIG_OPLUS_SM8550_CHARGER) += charger_ic/oplus_battery_sm8550.o vo
 oplus_chg-$(CONFIG_OPLUS_SM6375R_CHARGER) += \
 		voocphy/oplus_voocphy.o \
 		charger_ic/oplus_sy6974b.o \
+		charger_ic/oplus_sgm7220.o \
 		charger_ic/oplus_sy6970.o \
 		charger_ic/oplus_sgm41511.o \
+		charger_ic/oplus_sgm41512.o \
 		charger_ic/oplus_discrete_charger.o \
 		charger_ic/oplus_mp2650.o \
 		charger_ic/rt_pd_manager.o \

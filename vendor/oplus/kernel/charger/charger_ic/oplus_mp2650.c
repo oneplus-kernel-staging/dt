@@ -88,6 +88,13 @@ int mp2650_burst_mode_enable(bool enable);
 
 static DEFINE_MUTEX(mp2650_i2c_access);
 
+#ifndef CONFIG_REMOVE_OPLUS_FUNCTION
+int __attribute__((weak)) register_device_proc(char *name, char *version, char *vendor)
+{
+	return 0;
+}
+#endif /* CONFIG_REMOVE_OPLUS_FUNCTION */
+
 int __attribute__((weak)) oplus_get_charger_cycle(void)
 {
 	return 0;
@@ -1585,13 +1592,26 @@ int mp2650_otg_enable(void)
 {
 	int rc;
 	struct chip_mp2650 *chip = charger_ic;
+	int retry = 0;
 
 	if (!chip) {
 		chg_err("chip is NULL\n");
 		return 0;
 	}
-	if (atomic_read(&chip->charger_suspended) == 1) {
-		return 0;
+
+	while (retry <= WAIT_RESUME_MAX_TRY_TIME) {
+		/*mp2650 resume*/
+		if (atomic_read(&chip->charger_suspended) != 1) {
+			break;
+		}
+
+		msleep(10);
+
+		retry++;
+		if (retry == WAIT_RESUME_MAX_TRY_TIME) {
+			chg_err("wait charger_resume timeout \n");
+			return 0;
+		}
 	}
 
 	rc = mp2650_burst_mode_enable(true);
@@ -1623,13 +1643,26 @@ int mp2650_otg_disable(void)
 {
 	int rc;
 	struct chip_mp2650 *chip = charger_ic;
+	int retry = 0;
 
 	if (!chip) {
 		chg_err("chip is NULL\n");
 		return 0;
 	}
-	if (atomic_read(&chip->charger_suspended) == 1) {
-		return 0;
+
+	while (retry <= WAIT_RESUME_MAX_TRY_TIME) {
+		/*mp2650 resume*/
+		if (atomic_read(&chip->charger_suspended) != 1) {
+			break;
+		}
+
+		msleep(10);
+
+		retry++;
+		if (retry == WAIT_RESUME_MAX_TRY_TIME) {
+			chg_err("wait charger_resume timeout \n");
+			return 0;
+		}
 	}
 
 	mp2650_wireless_set_mps_otg_en_val(MP2650_GPIO_OTG_DIS);
@@ -3068,7 +3101,7 @@ static const struct dev_pm_ops mp2650_pm_ops = {
 };
 #else
 static int mp2650_resume(struct i2c_client *client)
-{	
+{
     unsigned long resume_tm_sec = 0;
     unsigned long sleep_time = 0;
     int rc = 0;

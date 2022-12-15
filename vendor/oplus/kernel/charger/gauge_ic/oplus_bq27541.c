@@ -5477,7 +5477,12 @@ static bool get_smem_batt_info(oplus_gauge_auth_result *auth, int kk) {
 			if (0 == kk) {
 				memcpy(auth, &smem_data->rst_k0, sizeof(oplus_gauge_auth_result));
 			} else {
-				memcpy(auth, &smem_data->rst_k1, sizeof(oplus_gauge_auth_result));
+				if (ZY0602_KEY_INDEX == kk)
+					memcpy(auth, &smem_data->rst_k2,
+						sizeof(oplus_gauge_auth_result));
+				else
+					memcpy(auth, &smem_data->rst_k1,
+						sizeof(oplus_gauge_auth_result));
 				pr_info("%s: auth result=%d\n", __func__, auth->result);
 
 #ifdef XBL_AUTH_DEBUG

@@ -2623,7 +2623,6 @@ static bool dsi_ctrl_check_for_spurious_error_interrupts(
 		if (dsi_ctrl->error_interrupt_count > interrupt_threshold) {
 			DSI_CTRL_WARN(dsi_ctrl, "Detected spurious interrupts on dsi ctrl\n");
 			SDE_EVT32_IRQ(dsi_ctrl->error_interrupt_count);
-			SDE_DBG_DUMP_WQ("all", "panic");
 			return true;
 		}
 	} else {

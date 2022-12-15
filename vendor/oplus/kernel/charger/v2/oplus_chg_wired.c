@@ -1076,7 +1076,8 @@ static void oplus_wired_plugin_work(struct work_struct *work)
 		oplus_wired_set_awake(chip, false);
 	}
 
-	oplus_mms_topic_update(chip->gauge_topic, true);
+	if (chip->gauge_topic != NULL)
+		oplus_mms_topic_update(chip->gauge_topic, true);
 }
 
 static void oplus_wired_chg_type_change_work(struct work_struct *work)

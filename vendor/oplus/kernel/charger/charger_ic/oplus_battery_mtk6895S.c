@@ -3809,6 +3809,8 @@ static void mtk_charger_external_power_changed(struct power_supply *psy)
 		get_vbus(info));
 
 #ifdef OPLUS_FEATURE_CHG_BASIC
+	oplus_chg_check_break(prop.intval);
+	oplus_chg_track_check_wired_charging_break(prop.intval);
 	if (oplus_vooc_get_fastchg_started() == true
 			&& oplus_vooc_get_adapter_update_status() != 1) {
 		printk(KERN_ERR "[OPLUS_CHG] %s oplus_vooc_get_fastchg_started = true!\n", __func__);
@@ -6356,6 +6358,7 @@ void oplus_wd0_detect_work(struct work_struct *work)
 				schedule_delayed_work(&usbtemp_recover_work, 0);
 			}
 		}
+		oplus_chg_clear_abnormal_adapter_var();
 	}
 
 	/*schedule_delayed_work(&wd0_detect_work, msecs_to_jiffies(CCDETECT_DELAY_MS));*/
@@ -7267,20 +7270,33 @@ int oplus_chg_set_qc_config_forvoocphy(void)
 	return ret;
 }
 
+#define OPLUS_HVDCP_DISABLE_TIME 1000
 int oplus_chg_set_qc_config_forsvooc(void)
 {
 	int ret = -1;
 	struct oplus_chg_chip *chip = g_oplus_chip;
+	struct mtk_charger *info = pinfo;
+
+	if (!info) {
+		chg_err("pinfo is null\n");
+		return -1;
+	}
 
 	if (!chip) {
 		pr_err("oplus_chip is null\n");
 		return -1;
 	}
 
-	printk(KERN_ERR "%s: qc9v svooc [%d %d %d]", __func__, chip->limits.vbatt_pdqc_to_9v_thr, chip->limits.vbatt_pdqc_to_5v_thr, chip->batt_volt);
+	chg_err(" qc9v svooc [%d %d %d %d]",
+		chip->limits.vbatt_pdqc_to_9v_thr,
+		chip->limits.vbatt_pdqc_to_5v_thr,
+		chip->batt_volt,
+		info->hvdcp_disable);
+
 	if (!chip->calling_on && chip->charger_volt < 6500 && chip->soc < 90
 		&& chip->temperature <= 530 && chip->cool_down_force_5v == false
-		&& (chip->batt_volt < chip->limits.vbatt_pdqc_to_9v_thr)) {	//
+		&& (chip->batt_volt < chip->limits.vbatt_pdqc_to_9v_thr)
+		&& (info->hvdcp_disable == false)) {
 		printk(KERN_ERR "%s: set qc to 9V", __func__);
 		mt6375_set_hvdcp_to_5v();	//Before request 9V, need to force 5V first.
 		msleep(300);
@@ -7293,6 +7309,10 @@ int oplus_chg_set_qc_config_forsvooc(void)
 #endif
 		msleep(300);
 		oplus_chg_unsuspend_charger();
+
+		/*check if the QC can be changed from 5v to 9V.*/
+		cancel_delayed_work_sync(&hvdcp_detect_work);
+		schedule_delayed_work(&hvdcp_detect_work, msecs_to_jiffies(1000));
 		ret = 0;
 	} else {
 		if (chip->charger_volt > 7500 &&
@@ -8040,6 +8060,7 @@ struct oplus_chg_operations  mtk6375_chg_ops = {
 	.set_typec_sinkonly = oplus_set_typec_sinkonly,
 	.set_typec_cc_open = oplus_set_typec_cc_open,
 	.oplus_usbtemp_monitor_condition = oplus_usbtemp_condition,
+	.get_subboard_temp = oplus_force_get_subboard_temp,
 };
 #endif /*OPLUS_FEATURE_CHG_BASIC*/
 

@@ -403,15 +403,25 @@ struct bq27541_authenticate_data {
 //#define SMEM_CHARGER_BATTERY_INFO	81
 #define SMEM_RESERVED_BOOT_INFO_FOR_APPS       418
 #define GAUGE_AUTH_MSG_LEN 20
+#define WLS_AUTH_RANDOM_LEN					8
+#define WLS_AUTH_ENCODE_LEN					8
+
 typedef struct {
 	int result;
 	unsigned char msg[GAUGE_AUTH_MSG_LEN];
 	unsigned char rcv_msg[GAUGE_AUTH_MSG_LEN];
 } oplus_gauge_auth_result;
 
+struct wls_chg_auth_result {
+	unsigned char random_num[WLS_AUTH_RANDOM_LEN];
+	unsigned char encode_num[WLS_AUTH_ENCODE_LEN];
+};
+
 typedef struct {
 	oplus_gauge_auth_result rst_k0;
 	oplus_gauge_auth_result rst_k1;
+	struct wls_chg_auth_result wls_auth_data;
+	oplus_gauge_auth_result rst_k2;
 } oplus_gauge_auth_info_type;
 
 struct chip_bq27541 {

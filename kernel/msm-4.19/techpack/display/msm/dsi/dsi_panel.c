@@ -62,6 +62,8 @@ unsigned int dis_set_first_level = 0;
 extern int lcd_set_bias(bool enable);
 extern int lcd_bl_set_led_brightness(int value);
 extern int turn_on_ktz8866_hw_en(bool on);
+/* A tablet Pad, modify mipi */
+bool mipi_c_phy_oslo_flag;
 
 /* Add for solve sau issue*/
 extern int lcd_closebl_flag;
@@ -411,6 +413,15 @@ static int dsi_panel_gpio_request(struct dsi_panel *panel)
 		}
 	}
 
+	if (gpio_is_valid(r_config->tp_cs_gpio)) {
+		rc = gpio_request(r_config->tp_cs_gpio, "panel_tp_cs_gpio");
+		if (rc) {
+			DSI_ERR("request for panel_tp_cs_gpio failed, rc=%d\n", rc);
+			if (gpio_is_valid(r_config->tp_cs_gpio))
+				gpio_free(r_config->tp_cs_gpio);
+		}
+	}
+
 	if (gpio_is_valid(r_config->panel_te_esd_gpio)) {
 		rc = gpio_request(r_config->panel_te_esd_gpio, "panel_te_esd_gpio");
 		if (rc)
@@ -637,7 +648,12 @@ static int dsi_panel_power_on(struct dsi_panel *panel)
 		}
 	}
 #endif /*OPLUS_BUG_STABILITY*/
-
+	if (gpio_is_valid(panel->reset_config.tp_cs_gpio)) {
+		rc = gpio_direction_output(panel->reset_config.tp_cs_gpio, 1);
+		if (rc)
+			DSI_ERR("unable to set dir for tp_cs_gpio rc=%d", rc);
+		gpio_set_value(panel->reset_config.tp_cs_gpio, 1);
+	}
 #ifdef OPLUS_BUG_STABILITY
 	dis_set_first_level = 1;
 	if(panel->nt36523w_ktz8866) {
@@ -708,7 +724,8 @@ static int dsi_panel_power_on(struct dsi_panel *panel)
 #ifdef OPLUS_BUG_STABILITY
 	if (!strcmp(panel->name,"samsung amb655uv01 amoled fhd+ panel with DSC") ||
 		!strcmp(panel->name,"boe nt37800 amoled fhd+ panel with DSC") ||
-		!strcmp(panel->name,"samsung fhd amoled")) {
+		!strcmp(panel->name,"samsung fhd amoled") ||
+		!strcmp(panel->name, "nt36523 lcd vid mode dsi panel")) {
 		usleep_range(10, 11);
 	} else if (!strcmp(panel->name,"samsung ams643xf01 amoled fhd+ panel") ||
 			!strcmp(panel->name,"samsung SOFE03F dsc cmd mode panel")) {
@@ -848,6 +865,13 @@ static int dsi_panel_power_off(struct dsi_panel *panel)
 		rc = turn_on_ktz8866_hw_en(false);
 		if (rc) {
 			DSI_ERR("[%s] failed set turn_on_ktz8866_hw_en false, rc=%d\n", panel->name, rc);
+		}
+
+		if(gpio_is_valid(panel->reset_config.tp_cs_gpio)) {
+			rc = gpio_direction_output(panel->reset_config.tp_cs_gpio, 0);
+			if (rc)
+				DSI_ERR("unable to set dir for tp_cs_gpio rc=%d", rc);
+			gpio_set_value(panel->reset_config.tp_cs_gpio, 0);
 		}
 	}
 #endif
@@ -3010,6 +3034,8 @@ static int dsi_panel_parse_misc_features(struct dsi_panel *panel)
 	#ifdef OPLUS_BUG_STABILITY
 	panel->nt36523w_ktz8866 = utils->read_bool(utils->data,
 			"qcom,nt36523w-ktz8866");
+	/* A tablet Pad, modify mipi */
+	mipi_c_phy_oslo_flag = panel->nt36523w_ktz8866;
 	#endif
 
 	return 0;
@@ -3159,6 +3185,12 @@ static int dsi_panel_parse_gpios(struct dsi_panel *panel)
 	if (!gpio_is_valid(panel->vddr_gpio)) {
 		DSI_DEBUG("[%s] vddr-gpio is not set, rc=%d\n",
 			 panel->name, rc);
+	}
+
+	panel->reset_config.tp_cs_gpio = utils->get_named_gpio(utils->data,
+					      "qcom,platform-tp-cs-gpio", 0);
+	if (!gpio_is_valid(panel->reset_config.tp_cs_gpio)) {
+		DSI_ERR("[%s] failed get qcom,platform-tp-cs-gpio, rc=%d\n", panel->name, rc);
 	}
 #endif
 
@@ -5305,7 +5337,8 @@ int dsi_panel_set_nolp(struct dsi_panel *panel)
 #ifdef OPLUS_BUG_STABILITY
 	if ((!strcmp(panel->oplus_priv.vendor_name, "AMS643YE01") ||
 		!strcmp(panel->oplus_priv.vendor_name, "AMS643YE01IN20057") ||
-		!strcmp(panel->name, "s6e3fc3_fhd_oled_cmd_samsung")) &&
+		!strcmp(panel->name, "s6e3fc3_fhd_oled_cmd_samsung") ||
+		!strcmp(panel->oplus_priv.vendor_name, "SOFE03F")) &&
 		(panel->bl_config.bl_level > panel->bl_config.brightness_normal_max_level)) {
 		if (!strcmp(panel->name,"samsung ams643ye01 in 20127 amoled fhd+ panel")) {
 			rc = dsi_panel_tx_cmd_set(panel, DSI_CMD_HBM_ENTER1_SWITCH);
@@ -5339,7 +5372,8 @@ int dsi_panel_prepare(struct dsi_panel *panel)
 #ifdef OPLUS_BUG_STABILITY
 	if (!strcmp(panel->name,"samsung amb655uv01 amoled fhd+ panel with DSC") ||
 		!strcmp(panel->name,"boe nt37800 amoled fhd+ panel with DSC") ||
-		!strcmp(panel->name,"samsung fhd amoled")) {
+		!strcmp(panel->name,"samsung fhd amoled") ||
+		!strcmp(panel->name, "nt36523 lcd vid mode dsi panel")) {
 		usleep_range(6000, 6100);
 		dsi_panel_reset(panel);
 #endif /* OPLUS_BUG_STABILITY */

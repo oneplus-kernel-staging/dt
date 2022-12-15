@@ -3977,11 +3977,14 @@ int chg_alg_event(struct notifier_block *notifier,
 #define OPLUS_SVID 0x22D9
 uint32_t pd_svooc_abnormal_adapter[] = {
 	0x20002,
+	0x10002,
+	0x10001,
+	0x40001,
 };
 
 int oplus_get_adapter_svid(void)
 {
-	int i = 0;
+	int i = 0, j = 0;
 	uint32_t vdos[VDO_MAX_NR] = {0};
 	struct tcpc_device *tcpc_dev = tcpc_dev_get_by_name("type_c_port0");
 	struct tcpm_svid_list svid_list= {0, {0}};
@@ -4005,6 +4008,13 @@ int oplus_get_adapter_svid(void)
 	if ((vdos[0] & 0xFFFF) == OPLUS_SVID) {
 		g_oplus_chip->pd_svooc = true;
 		chg_err("match svid and this is oplus adapter 11\n");
+		for (j = 0; j < ARRAY_SIZE(pd_svooc_abnormal_adapter); j++) {
+			if (pd_svooc_abnormal_adapter[j] == vdos[2]) {
+				chg_err("This is oplus gnd abnormal adapter %x %x \n", vdos[1], vdos[2]);
+				g_oplus_chip->is_abnormal_adapter = true;
+				break;
+			}
+		}
 	}
 
 	return 0;
@@ -4246,13 +4256,29 @@ static int pd_tcp_notifier_call(struct notifier_block *pnb,
 		pinfo->chrdet_state = noti->chrdet_state.chrdet;
 		pr_err("%s chrdet = %d\n", __func__, noti->chrdet_state.chrdet);
 
+		oplus_chg_check_break(pinfo->chrdet_state);
+
 		if (pinfo->chrdet_state) {
 			oplus_chg_wake_update_work();
 			oplus_wake_up_usbtemp_thread();
 		} else {
-			oplus_chg_set_charger_type_unknown();
+			if (!pinfo->wait_hard_reset_complete)
+				oplus_chg_set_charger_type_unknown();
 		}
 		break;
+	case TCP_NOTIFY_HARD_RESET_STATE:
+		switch (noti->hreset_state.state) {
+		case TCP_HRESET_SIGNAL_SEND:
+		case TCP_HRESET_SIGNAL_RECV:
+			pinfo->wait_hard_reset_complete = true;
+			break;
+		default:
+			pinfo->wait_hard_reset_complete = false;
+			break;
+		}
+		pr_err("pd_wait_hard_reset_complete: %d\n", pinfo->wait_hard_reset_complete);
+		break;
+
 	}
 	return ret;
 }
@@ -5294,6 +5320,7 @@ void oplus_ccdetect_work(struct work_struct *work)
 		oplus_ccdetect_enable();
 	        oplus_wake_up_usbtemp_thread();
 	} else {
+		oplus_chg_clear_abnormal_adapter_var();
 		if (g_oplus_chip)
 			g_oplus_chip->usbtemp_check = oplus_usbtemp_condition();
 
@@ -5322,6 +5349,7 @@ void oplus_wd0_detect_work(struct work_struct *work)
 	if (level != 1) {
 		oplus_wake_up_usbtemp_thread();
 	} else {
+		oplus_chg_clear_abnormal_adapter_var();
 		chip->usbtemp_check = oplus_usbtemp_condition();
 
 		if (chip->usb_status == USB_TEMP_HIGH) {
@@ -6810,7 +6838,7 @@ bool oplus_mt_get_vbus_status(void)
 		return false;
 	}
 
-	if (is_charger_exist(pinfo) || pinfo->chrdet_state) {
+	if (is_charger_exist(pinfo) || info->chrdet_state || info->wait_hard_reset_complete) {
 		return true;
 	} else if (oplus_wpc_get_wireless_charge_start() || oplus_chg_is_wls_present()) {
 		return true;

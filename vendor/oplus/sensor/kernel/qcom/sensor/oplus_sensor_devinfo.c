@@ -448,7 +448,8 @@ static void parse_cct_sensor_dts(struct sensor_hw *hw, struct device_node *ch_no
 		"fd-time",
 		"fac-cali-fd-time",
 		"first-fd-gain",
-		"fac-cali-fd-gain"
+		"fac-cali-fd-gain",
+		"algo-flag"
 	};
 
 	hw->feature.feature[0] = 1;/*default use decoupled driver oplus_cct */
